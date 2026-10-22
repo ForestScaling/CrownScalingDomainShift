@@ -1,0 +1,31 @@
+# =============================================================================
+# Data roots on OSC. Data never moves; every script resolves paths from here.
+# Change these two lines if the repo is run anywhere else.
+# =============================================================================
+deepforest_root: /fs/ess/PUOM0017/ForestScaling/DeepForest
+scaling_root:    /fs/ess/PUOM0017/ForestScaling/ScalingAcrossResolution
+
+# Small, versionable outputs (tables, figures, run logs) live inside the repo.
+# Large outputs (shapefiles, crown CSVs, parameter chunks) stay under the data
+# roots, in product-keyed folders so 30 cm and 60 cm runs never mix.
+reports_dir: reports          # relative to repo root
+logs_dir:    logs             # relative to repo root
+
+# ---- Imagery and annotation layout (relative to deepforest_root) ------------
+annotation_bbox_dir: Imagery/NAIP/{split}/bbox              # QGIS annotation shapefiles
+crop_dir:            Imagery/NAIP/{split}/Crop_Images_{product}
+trained_models_dir:  TrainedModels
+crowns_dir:          Outputs/{product}/{site}               # predicted crown shapefiles
+site_aop_shapefile:  Shapefiles/{site}_AOP.shp
+site_grid_file:      Shapefiles/{site}_grid_1ha.gpkg        # written once by make_grid.R
+
+# NEON CHM tiles. The visit folder (e.g. 2022_HARV_7) is globbed, not hardcoded.
+chm_glob: LiDAR/NEON/{site}/DP3.30015.001/neon-aop-products/{chm_year}/FullSite/D01/{chm_year}_{site}_*/L3/DiscreteLidar/CanopyHeightModelGtif/NEON_D01_{site}_DP3_{tile}_CHM.tif
+
+# NEON LAI tiles (DP3.30012.001)
+lai_glob: Imagery/NEON/DP3.30012.001/neon-aop-products/{lai_year}/FullSite/D01/{lai_year}_{site}_*/L3/Spectrometer/LAI/*_LAI.tif
+
+# ---- Downstream layout (relative to scaling_root) ---------------------------
+crown_datasets_dir: data/CrownDatasets                      # {site}_{product}_trees_{tile}.csv
+lai_dir:            data/LAI                                # {site}_gridLAI.csv
+parameters_dir:     Results/Parameters/{site}/{product}/Chunks

@@ -1,0 +1,12 @@
+logs/
+__pycache__/
+*.pyc
+.Rhistory
+*.tif
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.pt
+*.ckpt

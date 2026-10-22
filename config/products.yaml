@@ -1,0 +1,42 @@
+# =============================================================================
+# One entry per imagery product. Scripts take --product <key> and read
+# everything else from here. Keys are used in every output folder and filename.
+# =============================================================================
+
+sites:
+  BART: {split: Training, chm_year: 2022, lai_year: 2019}
+  HARV: {split: Testing,  chm_year: 2022, lai_year: 2019}
+
+detection:
+  score_threshold: 0.05   # applied to all models; report this value in Methods
+  iou_threshold:   0.4    # evaluate_boxes match threshold; report in Methods
+  chm_min_height:  3      # m; crowns with mean CHM below this are dropped
+
+training:
+  train_site: BART
+  epochs: 50
+  seed: 42
+
+size_abundance:
+  min_crowns_per_cell: 75
+  prior_mean: 1.4         # LAI-informed prior, following Eichenwald et al. (2025)
+  prior_sd:   0.3
+  chunk_size: 50
+  seed: 42
+
+products:
+  NEON10:
+    description: Weinstein et al. published NEON crowns (10 cm RGB)
+    res_m: 0.1
+    published_crowns: true          # no prediction step; crowns read from crowns_dir_override
+    crowns_dir_override: Outputs/Weinstein/{site}
+  NAIP30:
+    description: NAIP 30 cm (VT, NH, MA 2023)
+    res_m: 0.3
+    tile_glob: Imagery/NAIP/{site}/30cm/match_NEON/NAIP_30cm_{site}_*_{tile}.tif
+    predict: {patch_size: 200, patch_overlap: 0.25}   # 60 m focal view
+  NAIP60:
+    description: NAIP 60 cm (ME, VT, NH, MA, NY 2021)
+    res_m: 0.6
+    tile_glob: Imagery/NAIP/{site}/60cm/match_NEON/NAIP_60cm_{site}_*_{tile}.tif
+    predict: {patch_size: 100, patch_overlap: 0.25}   # 60 m focal view, mirrors NAIP30 (CONFIRM)
