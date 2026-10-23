@@ -15,7 +15,11 @@
 # Usage:
 #   Rscript pipeline/05_crown_metrics/crown_metrics.R --product NAIP30 --site HARV --task-id 3
 #   Rscript pipeline/05_crown_metrics/crown_metrics.R --product NAIP30 --site HARV --count
-#   --height neon_chm (default) | morford (Phase 3, not yet implemented)
+#   --height neon_chm (default) | morford
+#
+# Geometry (area, perimeter, diameter, grid cell) is always measured in the
+# site's NEON CHM CRS (UTM) so it is identical across height sources; only the
+# height extraction changes with --height.
 #
 # Output: {scaling_root}/data/CrownDatasets/{site}_{product}[_{height}]_trees_{tile}.csv
 #         (height suffix only added for non-default height sources)
@@ -39,19 +43,19 @@ if (isTRUE(args$count)) { cat(length(files), "\n"); quit(save = "no") }
 if (!length(files)) stop("No crown shapefiles for ", args$product, " ", args$site)
 task <- as.integer(args$task_id)
 if (is.na(task) || task < 1 || task > length(files)) stop("--task-id must be 1..", length(files))
-if (args$height != "neon_chm") stop("--height ", args$height, " not implemented yet (Phase 3)")
+if (!args$height %in% names(cfg$height_sources)) stop("Unknown --height ", args$height)
 
 file <- files[task]
 tile <- cs_tile_id(file)
 cat("Product:", args$product, "| Site:", args$site, "| Tile:", tile, "\n")
 
-chm_path <- cs_find_chm(cfg, args$site, tile)
-if (is.na(chm_path)) stop("No CHM for ", args$site, " ", tile)
-chm <- rast(chm_path)
+# NEON CHM defines the measurement CRS even when height comes from elsewhere
+utm <- crs(cs_height_raster(cfg, args$site, "neon_chm", tile))
+hgt <- cs_height_raster(cfg, args$site, args$height, tile)
 
 crowns <- st_read(file, quiet = TRUE)
 if (nrow(crowns) == 0) { cat("No crowns; nothing written.\n"); quit(save = "no") }
-crowns <- st_transform(crowns, crs(chm))
+crowns <- st_transform(crowns, utm)
 crowns$crown_id <- seq_len(nrow(crowns))
 
 # ---- Assign each crown to the 1 ha cell it overlaps most --------------------
@@ -70,8 +74,12 @@ crowns$Perimeter <- as.numeric(st_perimeter(crowns))
 crowns$Diameter  <- 0.5 * sqrt(crowns$Perimeter^2 - 8 * crowns$Area)
 
 # ---- Height (zonal max within crown) and DBH --------------------------------
-crowns$Max_Height <- terra::extract(chm, vect(crowns), fun = max, na.rm = TRUE, ID = FALSE)[, 1]
-crowns$Max_Height[!is.finite(crowns$Max_Height)] <- NA   # crowns with no CHM coverage
+crowns_h <- if (same.crs(hgt, utm)) vect(crowns) else project(vect(crowns), crs(hgt))
+crowns$Max_Height <- terra::extract(hgt, crowns_h, fun = max, na.rm = TRUE, ID = FALSE)[, 1] *
+  cfg$height_sources[[args$height]]$scale
+crowns$Max_Height[!is.finite(crowns$Max_Height)] <- NA   # crowns with no height coverage
+cat("Height (", args$height, "): ", sum(is.na(crowns$Max_Height)), " of ", nrow(crowns),
+    " crowns without coverage\n", sep = "")
 crowns$DBH <- dbh(H = crowns$Max_Height, CA = crowns$Diameter, biome = 0)
 
 out <- st_drop_geometry(crowns)

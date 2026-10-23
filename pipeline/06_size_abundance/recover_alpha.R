@@ -21,8 +21,10 @@
 # Usage:
 #   Rscript pipeline/06_size_abundance/recover_alpha.R --product NAIP30 --site HARV --task-id 1
 #   Rscript pipeline/06_size_abundance/recover_alpha.R --product NAIP30 --site HARV --count-chunks
+#   add --height morford to fit crowns whose heights came from Morford et al. (2026)
 # Output: {scaling_root}/Results/Parameters/{site}/{product}/Chunks/
 #           {site}_{product}_chunk{NNN}_alpha.csv | _trees.csv | _skipped.csv
+#         (product folder/label becomes {product}_morford for --height morford)
 # =============================================================================
 cs_repo_root <- function() {
   f <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
@@ -32,11 +34,13 @@ source(file.path(cs_repo_root(), "src", "R", "utils.R"))
 cs_osc_env()
 
 args <- cs_args(list(product = "REQUIRED", site = "REQUIRED", task_id = NA,
-                     chunk_size = NA, ncores = "1", count_chunks = FALSE))
+                     chunk_size = NA, ncores = "1", count_chunks = FALSE,
+                     height = "neon_chm"))
 cfg  <- cs_config(cs_repo_root())
 sa   <- cfg$size_abundance
 chunk_size <- if (is.na(args$chunk_size)) sa$chunk_size else as.integer(args$chunk_size)
 ncores <- as.integer(args$ncores)
+label  <- if (args$height == "neon_chm") args$product else paste0(args$product, "_", args$height)
 options(mc.cores = ncores)
 
 suppressPackageStartupMessages({
@@ -47,9 +51,9 @@ suppressPackageStartupMessages({
 
 # ---- Data -------------------------------------------------------------------
 files <- list.files(cs_spath(cfg, "crown_datasets_dir"),
-                    pattern = paste0("^", args$site, "_", args$product, "_trees_.*\\.csv$"),
+                    pattern = paste0("^", args$site, "_", label, "_trees_.*\\.csv$"),
                     full.names = TRUE)
-if (!length(files)) stop("No crown datasets for ", args$site, " ", args$product)
+if (!length(files)) stop("No crown datasets for ", args$site, " ", label)
 df <- rbindlist(lapply(files, fread), fill = TRUE)
 df <- df[!is.na(grid_id) & is.finite(DBH)]
 
@@ -101,13 +105,13 @@ for (g in my_grids) {
 }
 
 # ---- Write ------------------------------------------------------------------
-out_dir <- cs_spath(cfg, "parameters_dir", site = args$site, product = args$product)
+out_dir <- cs_spath(cfg, "parameters_dir", site = args$site, product = label)
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
-stem <- file.path(out_dir, sprintf("%s_%s_chunk%03d", args$site, args$product, task))
+stem <- file.path(out_dir, sprintf("%s_%s_chunk%03d", args$site, label, task))
 tag  <- function(x) {
   if (!length(x)) return(data.table(grid = integer()))
   x <- rbindlist(x, fill = TRUE)
-  x[, `:=`(site = args$site, product = args$product)]
+  x[, `:=`(site = args$site, product = args$product, height_source = args$height)]
 }
 fwrite(tag(alpha_out), paste0(stem, "_alpha.csv"))
 fwrite(tag(trees_out), paste0(stem, "_trees.csv"))

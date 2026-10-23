@@ -8,4 +8,4 @@
 source slurm/env_R.sh
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 Rscript pipeline/06_size_abundance/recover_alpha.R --product "$PRODUCT" --site "$SITE" \
-  --task-id "$SLURM_ARRAY_TASK_ID" --ncores "$SLURM_CPUS_PER_TASK"
+  --task-id "$SLURM_ARRAY_TASK_ID" --ncores "$SLURM_CPUS_PER_TASK" --height "${HEIGHT:-neon_chm}"

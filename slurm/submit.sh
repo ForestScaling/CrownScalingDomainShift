@@ -7,9 +7,9 @@
 #   bash slurm/submit.sh evaluate    NAIP30 [trained|prebuilt]
 #   bash slurm/submit.sh predict     NAIP30 HARV [trained|prebuilt]
 #   bash slurm/submit.sh grid        HARV
-#   bash slurm/submit.sh crowns      NAIP30 HARV
+#   bash slurm/submit.sh crowns      NAIP30 HARV [neon_chm|morford]
 #   bash slurm/submit.sh lai         HARV
-#   bash slurm/submit.sh alpha       NAIP30 HARV
+#   bash slurm/submit.sh alpha       NAIP30 HARV [neon_chm|morford]
 #
 # Array sizes are counted from the data at submit time (tiles, crown files,
 # grid-cell chunks), never hardcoded. Prints the job id on success.
@@ -39,12 +39,12 @@ case "$stage" in
     source slurm/env_R.sh
     n=$(Rscript pipeline/05_crown_metrics/crown_metrics.R --product "$1" --site "$2" --count | tr -d ' ')
     echo "Submitting $n tasks (one per crown shapefile)" >&2
-    sb --array=1-"$n" --export=ALL,PRODUCT=$1,SITE=$2 slurm/05_crown_metrics.sbatch ;;
+    sb --array=1-"$n" --export=ALL,PRODUCT=$1,SITE=$2,HEIGHT=${3:-neon_chm} slurm/05_crown_metrics.sbatch ;;
   lai)         sb --export=ALL,SITE=$1 slurm/06_lai.sbatch ;;
   alpha)
     source slurm/env_R.sh
-    n=$(Rscript pipeline/06_size_abundance/recover_alpha.R --product "$1" --site "$2" --count-chunks | tr -d ' ')
+    n=$(Rscript pipeline/06_size_abundance/recover_alpha.R --product "$1" --site "$2" --height "${3:-neon_chm}" --count-chunks | tr -d ' ')
     echo "Submitting $n chunk tasks" >&2
-    sb --array=1-"$n" --export=ALL,PRODUCT=$1,SITE=$2 slurm/06_recover_alpha.sbatch ;;
+    sb --array=1-"$n" --export=ALL,PRODUCT=$1,SITE=$2,HEIGHT=${3:-neon_chm} slurm/06_recover_alpha.sbatch ;;
   *) echo "Unknown stage: $stage" >&2; exit 1 ;;
 esac

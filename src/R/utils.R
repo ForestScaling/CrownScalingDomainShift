@@ -98,6 +98,22 @@ cs_find_chm <- function(cfg, site, tile) {
   if (length(hits)) hits else NA_character_
 }
 
+# Height raster for a source. NEON: the matching 1 km CHM tile. Morford: a
+# virtual mosaic of the site's GEE export chunks (built once per R session).
+cs_height_raster <- function(cfg, site, source, tile) {
+  if (source == "neon_chm") {
+    p <- cs_find_chm(cfg, site, tile)
+    if (is.na(p)) stop("No NEON CHM for ", site, " ", tile)
+    return(rast(p))
+  }
+  if (source == "morford") {
+    f <- sort(Sys.glob(cs_dpath(cfg, "morford_glob", site = site)))
+    if (!length(f)) stop("No Morford CHM chunks for ", site)
+    return(vrt(f))
+  }
+  stop("Unknown height source: ", source)
+}
+
 # ---- 1 ha grid ---------------------------------------------------------------
 # One canonical grid per site, built once by 05_crown_metrics/make_grid.R so
 # grid_id is identical across crown metrics, LAI, and parameter recovery.

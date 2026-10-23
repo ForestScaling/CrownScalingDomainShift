@@ -10,3 +10,10 @@ __pycache__/
 *.cpg
 *.pt
 *.ckpt
+lightning_logs/
+logs/*
+!logs/.gitkeep
+reports/tables/*
+!reports/tables/.gitkeep
+reports/figures/*
+!reports/figures/.gitkeep

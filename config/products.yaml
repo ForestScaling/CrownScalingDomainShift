@@ -12,6 +12,10 @@ detection:
   iou_threshold:   0.4    # evaluate_boxes match threshold; report in Methods
   chm_min_height:  3      # m; crowns with mean CHM below this are dropped
 
+height_sources:
+  neon_chm: {scale: 1.0}   # NEON DP3.30015.001, metres
+  morford:  {scale: 1.0}   # Morford et al. 2026; CONFIRM units (set e.g. 0.1 if stored as decimetres)
+
 training:
   train_site: BART
   epochs: 50
