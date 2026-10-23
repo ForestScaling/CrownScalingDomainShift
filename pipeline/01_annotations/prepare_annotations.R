@@ -1,6 +1,6 @@
 # =============================================================================
 # prepare_annotations.R
-# Turn QGIS crown annotations into DeepForest training/testing crops + CSVs for
+# Turn ArcGIS crown annotations into DeepForest training/testing crops + CSVs for
 # one imagery product. Replaces prepareAnnotations.R and the archived
 # developTrainingData.R / developTestingData_step*.R.
 #

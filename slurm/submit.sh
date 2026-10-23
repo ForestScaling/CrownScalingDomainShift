@@ -24,6 +24,7 @@ stage=${1:?stage required}; shift
 sb() { sbatch --parsable "$@"; }
 
 case "$stage" in
+  retile)      sb --export=ALL,SITE=$1,RES=$2 slurm/00_retile.sbatch ;;
   annotations) sb --export=ALL,PRODUCT=$1 slurm/01_annotations.sbatch ;;
   train)       sb --export=ALL,PRODUCT=$1,EXTRA="${2:-}" slurm/02_train.sbatch ;;
   evaluate)    sb --export=ALL,PRODUCT=$1,MODEL=${2:-trained} slurm/03_evaluate.sbatch ;;

@@ -29,6 +29,9 @@ dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 tif_files <- list.files(raster_dir, pattern = "\\.tif$", full.names = TRUE)
 
+if (!length(tif_files)) stop("No NAIP scenes in ", normalizePath(raster_dir, mustWork = FALSE),
+                             ". Export them from GEE first.")
+
 # Define target projection (UTM Zone 19N)
 #target_crs <- "EPSG:32619"
 
