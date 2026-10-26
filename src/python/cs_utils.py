@@ -146,35 +146,63 @@ def project(raster_path, boxes):
     return geopandas.GeoDataFrame(boxes, geometry=geoms, crs=crs)
 
 
-def filter_by_chm(boxes, chm_path, height_threshold=3):
+def chm_box_means(boxes, chm_path):
     """
-    Drop crowns whose mean CHM height is below height_threshold (m).
-    Boxes are compared in the CHM CRS and returned in their original CRS.
+    Mean CHM height inside each box (NaN where no valid pixels).
+
+    Uses pixel centres inside the box, the same rule as rasterio.mask with
+    all_touched=False. Fast path: when boxes share the CHM CRS (axis-aligned
+    boxes on the CHM grid), means come straight from array windows. Otherwise
+    each reprojected polygon is masked individually.
     """
-    import geopandas
     import rasterio
     from rasterio.mask import mask
 
+    n = len(boxes)
+    means = np.full(n, np.nan)
+    if n == 0:
+        return means
+    with rasterio.open(chm_path) as src:
+        nodata = src.nodata
+        if boxes.crs == src.crs:
+            arr = src.read(1).astype("float64")
+            if nodata is not None:
+                arr[arr == nodata] = np.nan
+            t = src.transform
+            x0, y0, px, py = t.c, t.f, t.a, -t.e
+            b = boxes.geometry.bounds.to_numpy()          # minx, miny, maxx, maxy
+            c0 = np.ceil((b[:, 0] - x0) / px - 0.5).astype(int)
+            c1 = np.floor((b[:, 2] - x0) / px - 0.5).astype(int)
+            r0 = np.ceil((y0 - b[:, 3]) / py - 0.5).astype(int)
+            r1 = np.floor((y0 - b[:, 1]) / py - 0.5).astype(int)
+            c0, r0 = np.clip(c0, 0, None), np.clip(r0, 0, None)
+            c1, r1 = np.clip(c1, None, src.width - 1), np.clip(r1, None, src.height - 1)
+            for i in range(n):
+                if c1[i] >= c0[i] and r1[i] >= r0[i]:
+                    w = arr[r0[i]:r1[i] + 1, c0[i]:c1[i] + 1]
+                    if np.isfinite(w).any():
+                        means[i] = np.nanmean(w)
+        else:
+            for i, geom in enumerate(boxes.to_crs(src.crs).geometry):
+                try:
+                    a, _ = mask(src, [geom], crop=True, filled=False)
+                except ValueError:                        # box entirely outside the tile
+                    continue
+                v = a[0].compressed().astype(float)
+                if nodata is not None:
+                    v = v[v != nodata]
+                v = v[~np.isnan(v)]
+                if v.size:
+                    means[i] = v.mean()
+    return means
+
+
+def filter_by_chm(boxes, chm_path, height_threshold=3):
+    """Drop crowns whose mean CHM height is below height_threshold (m) or unknown."""
     if len(boxes) == 0:
         return boxes
-    orig_crs = boxes.crs
-    keep = []
-    with rasterio.open(chm_path) as src:
-        work = boxes.to_crs(src.crs) if boxes.crs != src.crs else boxes
-        nodata = src.nodata
-        for geom in work.geometry:
-            try:
-                arr, _ = mask(src, [geom], crop=True, filled=False)
-            except ValueError:            # box falls entirely outside the CHM tile
-                keep.append(False)
-                continue
-            vals = arr[0].compressed().astype(float)
-            if nodata is not None:
-                vals = vals[vals != nodata]
-            vals = vals[~np.isnan(vals)]
-            keep.append(vals.size > 0 and vals.mean() >= height_threshold)
-    out = boxes.loc[np.array(keep, dtype=bool)]
-    return geopandas.GeoDataFrame(out, geometry="geometry", crs=orig_crs)
+    m = chm_box_means(boxes, chm_path)
+    return boxes.loc[np.nan_to_num(m, nan=-np.inf) >= height_threshold]
 
 
 def crowns_filename(product, kind, patch, overlap, thr, res_m, site, tile):

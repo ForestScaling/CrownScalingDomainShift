@@ -16,7 +16,9 @@ Usage:
 Outputs:
     {deepforest_root}/Outputs/{product}/{site}[/{out_subdir}]/{product}_{model}_p.._o.._t.._f.._{site}_{tile}.shp
     Production runs (no --out-subdir) feed 05_crown_metrics; exploration runs go
-    to a subfolder so they are never globbed downstream.
+    to a subfolder so they are never globbed downstream. Unfiltered predictions
+    are kept in .../unfiltered/ so the CHM filter can be re-applied without
+    re-predicting (see filter_crowns.py).
 """
 
 import argparse
@@ -40,6 +42,8 @@ ap.add_argument("--n-tasks", type=int, default=1)
 ap.add_argument("--out-subdir", default=None, help="write to a subfolder (exploration runs)")
 ap.add_argument("--skip-existing", action="store_true")
 ap.add_argument("--list-only", action="store_true", help="print tile count and exit")
+ap.add_argument("--allow-missing-chm", action="store_true",
+                help="continue (unfiltered) when a tile has no CHM; default is to stop before predicting")
 args = ap.parse_args()
 
 cfg = cs.load_config()
@@ -63,7 +67,18 @@ thr = cfg["detection"]["score_threshold"]
 out_dir = cs.dpath(cfg, "crowns_dir", product=args.product, site=args.site)
 if args.out_subdir:
     out_dir = os.path.join(out_dir, args.out_subdir)
-os.makedirs(out_dir, exist_ok=True)
+raw_dir = os.path.join(out_dir, "unfiltered")
+os.makedirs(raw_dir, exist_ok=True)
+
+# ---- Preflight: confirm every tile has a CHM before spending compute --------
+chm_paths = {tile: cs.find_chm(cfg, args.site, tile) for tile, _ in my_tiles}
+missing = [t for t, p in chm_paths.items() if p is None]
+if missing:
+    print(f"Missing CHM for {len(missing)} of {len(my_tiles)} tiles, e.g. {missing[:5]}")
+    print("CHM glob:", cs.dpath(cfg, "chm_glob", site=args.site, tile="<tile>",
+                                chm_year=cfg["sites"][args.site]["chm_year"]))
+    if not args.allow_missing_chm:
+        sys.exit("Stopping before prediction. Fix config/paths.yaml chm_glob or pass --allow-missing-chm.")
 
 model = cs.load_model(cfg, args.product, args.model)
 
@@ -81,15 +96,18 @@ for tile, raster_path in my_tiles:
     boxes = cs.project(raster_path, pred)
     n0 = len(boxes)
 
-    chm = cs.find_chm(cfg, args.site, tile)
+    keep = [c for c in ["xmin", "ymin", "xmax", "ymax", "score", "label", "geometry"] if c in boxes]
+    boxes = boxes[keep]
+    boxes.to_file(os.path.join(raw_dir, os.path.basename(out_path)), driver="ESRI Shapefile")
+
+    chm = chm_paths[tile]
     if chm is None:
         n_no_chm += 1
         print(f"{tile}: WARNING no CHM tile found; writing unfiltered crowns")
     else:
         boxes = cs.filter_by_chm(boxes, chm, cfg["detection"]["chm_min_height"])
 
-    keep = [c for c in ["xmin", "ymin", "xmax", "ymax", "score", "label", "geometry"] if c in boxes]
-    boxes[keep].to_file(out_path, driver="ESRI Shapefile")
+    boxes.to_file(out_path, driver="ESRI Shapefile")
     print(f"{tile}: {n0} -> {len(boxes)} crowns after CHM filter ({time.time() - t0:.0f}s)")
 
 print(f"Done. Tiles without CHM: {n_no_chm}")

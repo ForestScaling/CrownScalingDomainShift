@@ -5,12 +5,18 @@
 # (each script defines cs_repo_root() locally so it can find this file).
 # =============================================================================
 
+# PROJ must not try to download datum-shift grids. When the network lookup
+# fails (no internet, as on many compute nodes) and terra is loaded, sf can
+# silently drop polygon vertices during NAD83 <-> WGS84 transforms (a 1 km tile
+# came back as a triangle in testing). Set before the packages load.
+Sys.setenv(PROJ_NETWORK = "OFF")
 suppressPackageStartupMessages({
   library(yaml)
   library(sf)
   library(terra)
   library(dplyr)
 })
+invisible(sf_proj_network(FALSE))
 
 # ---- OSC module setup (no-op off OSC) ---------------------------------------
 # Previously duplicated at the top of every ScalingAcrossResolution script.
@@ -128,6 +134,13 @@ cs_build_grid <- function(cfg, site) {
   pieces <- st_drop_geometry(grid)[, c("grid_id", "TileID")]
   dissolved <- grid |> group_by(grid_id) |> summarise(geometry = st_union(geometry), .groups = "drop") |>
     st_make_valid()
+  # Guard: the grid must cover the AOP. A mismatch means a reprojection or
+  # geometry failure upstream; stop rather than write a grid with holes.
+  a_aop  <- as.numeric(sum(st_area(st_union(aop))))
+  a_grid <- as.numeric(sum(st_area(dissolved)))
+  if (abs(a_grid - a_aop) / a_aop > 0.001)
+    stop(sprintf("Grid area (%.0f m2) differs from AOP area (%.0f m2) by %.2f%%; check PROJ/CRS setup.",
+                 a_grid, a_aop, 100 * (a_grid - a_aop) / a_aop))
   list(grid = dissolved, pieces = pieces)
 }
 

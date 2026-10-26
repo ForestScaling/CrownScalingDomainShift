@@ -20,7 +20,7 @@ site_aop_shapefile:  Shapefiles/{site}_AOP.shp
 site_grid_file:      Shapefiles/{site}_grid_1ha.gpkg        # written once by make_grid.R
 
 # NEON CHM tiles. The visit folder (e.g. 2022_HARV_7) is globbed, not hardcoded.
-chm_glob: LiDAR/NEON/{site}/DP3.30015.001/neon-aop-products/{chm_year}/FullSite/D01/{chm_year}_{site}_*/L3/DiscreteLidar/CanopyHeightModelGtif/NEON_D01_{site}_DP3_{tile}_CHM.tif
+chm_glob: Imagery/LiDAR/NEON/{site}/DP3.30015.001/neon-aop-products/{chm_year}/FullSite/D01/{chm_year}_{site}_*/L3/DiscreteLidar/CanopyHeightModelGtif/NEON_D01_{site}_DP3_{tile}_CHM.tif
 
 # Morford et al. (2026) 0.6 m CHM, GEE export chunks per site (not on the NEON tile grid).
 # All chunks matching the glob are mosaicked virtually (VRT); nothing is retiled on disk.
