@@ -115,7 +115,10 @@ cs_height_raster <- function(cfg, site, source, tile) {
   if (source == "morford") {
     f <- sort(Sys.glob(cs_dpath(cfg, "morford_glob", site = site)))
     if (!length(f)) stop("No Morford CHM chunks for ", site)
-    return(vrt(f))
+    r <- vrt(f)
+    nd <- cfg$height_sources$morford$nodata          # optional; GEE exports carry no NoData flag
+    if (!is.null(nd)) NAflag(r) <- nd
+    return(r)
   }
   stop("Unknown height source: ", source)
 }
@@ -142,6 +145,23 @@ cs_build_grid <- function(cfg, site) {
     stop(sprintf("Grid area (%.0f m2) differs from AOP area (%.0f m2) by %.2f%%; check PROJ/CRS setup.",
                  a_grid, a_aop, 100 * (a_grid - a_aop) / a_aop))
   list(grid = dissolved, pieces = pieces)
+}
+
+# Raster template whose cells are exactly the 1 ha grid cells: same origin,
+# size, and EPSG:5070 CRS as st_make_grid() in cs_build_grid(). grid_id k is
+# raster cell cs_grid_cells(template, k).
+cs_grid_template <- function(cfg, site) {
+  aop <- st_read(cs_dpath(cfg, "site_aop_shapefile", site = site), quiet = TRUE) |> st_transform(5070)
+  bb <- st_bbox(aop)
+  nc <- ceiling((bb[["xmax"]] - bb[["xmin"]]) / 100)
+  nr <- ceiling((bb[["ymax"]] - bb[["ymin"]]) / 100)
+  rast(xmin = bb[["xmin"]], xmax = bb[["xmin"]] + nc * 100, ymin = bb[["ymin"]], ymax = bb[["ymin"]] + nr * 100,
+       ncols = nc, nrows = nr, crs = "EPSG:5070")
+}
+cs_grid_cells <- function(template, grid_id) {
+  col <- (grid_id - 1) %% ncol(template)
+  row_from_bottom <- (grid_id - 1) %/% ncol(template)
+  (nrow(template) - 1 - row_from_bottom) * ncol(template) + col + 1
 }
 
 cs_read_grid <- function(cfg, site) {

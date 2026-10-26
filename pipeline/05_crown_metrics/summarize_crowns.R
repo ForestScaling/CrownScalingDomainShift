@@ -12,6 +12,9 @@
 #     missing DBH
 #   - crown counts per tile and per cell relative to the reference product
 #   - NEON CHM vs Morford height agreement on identical crowns
+#   - distribution differences vs the reference (KS D, Wasserstein-1, median
+#     ratio) for area, diameter, height, DBH; paired Wilcoxon test on tile counts
+#   - crowns per hectare by DBH size class
 #
 # Usage:  Rscript pipeline/05_crown_metrics/summarize_crowns.R --site HARV
 #         [--reference NEON10] [--sample 200000]
@@ -99,7 +102,9 @@ if (ref %in% tile_counts$product) {
   fit_stats <- function(x, y) list(n = length(x), r2 = cor(x, y)^2, rmse = sqrt(mean((x - y)^2)),
                                    mae = mean(abs(x - y)), bias = mean(x - y))
   ref_stats <- merge(
-    vs_ref_tile[, .(n_tiles = .N, median_pct_diff_per_tile = median(pct_diff)), by = product],
+    vs_ref_tile[, .(n_tiles = .N, median_pct_diff_per_tile = median(pct_diff),
+                    wilcoxon_p = if (.N > 1) suppressWarnings(wilcox.test(N, N_ref, paired = TRUE)$p.value)
+                                 else NA_real_), by = product],
     vs_ref_cell[, fit_stats(N, N_ref), by = product], by = "product")
   fwrite(ref_stats, tab("counts_vs_reference"))
 }
@@ -117,6 +122,41 @@ if (all(c("neon_chm", "morford") %in% dt$height_source)) {
   fwrite(hc, tab("height_comparison"))
 }
 
+# ---- 3b. Distribution differences vs the reference -------------------------
+# With millions of crowns every p-value is ~0; KS D, Wasserstein-1, and the
+# median ratio are the effect sizes to report. Each set is compared with the
+# reference measured with NEON CHM heights.
+dist_tab <- NULL
+ref_set <- dt[product == ref & height_source == "neon_chm"]
+if (nrow(ref_set)) {
+  w1 <- function(x, y) { p <- seq(0.0005, 0.9995, length.out = 2000)
+                         mean(abs(quantile(x, p, names = FALSE) - quantile(y, p, names = FALSE))) }
+  rows <- list()
+  for (lv in setdiff(levels(dt$set), unique(ref_set$set))) {
+    d <- dt[set == lv]
+    for (v in c("Area", "Diameter", "Max_Height", "DBH")) {
+      x <- d[[v]][is.finite(d[[v]])]; y <- ref_set[[v]][is.finite(ref_set[[v]])]
+      if (length(x) < 2 || length(y) < 2) next
+      k <- suppressWarnings(ks.test(x, y))
+      rows[[length(rows) + 1]] <- data.table(set = lv, variable = v, n = length(x), n_ref = length(y),
+        median = median(x), median_ref = median(y), median_ratio = median(x) / median(y),
+        ks_D = unname(k$statistic), ks_p = k$p.value, wasserstein1 = w1(x, y))
+    }
+  }
+  dist_tab <- rbindlist(rows)
+  fwrite(dist_tab, tab("distributions_vs_reference"))
+}
+
+# ---- 3c. Crowns per hectare by DBH size class -------------------------------
+grid_file <- cs_dpath(cfg, "site_grid_file", site = site)
+area_ha <- if (file.exists(grid_file)) sum(as.numeric(st_area(cs_read_grid(cfg, site)))) / 1e4 else NA_real_
+breaks <- c(seq(0, 80, by = 10), Inf)
+size_tab <- dt[is.finite(DBH), .N, by = .(set, size_class = cut(DBH, breaks, right = FALSE,
+             labels = c(paste0(head(breaks, -2), "-", breaks[-c(1, length(breaks))]), "80+")))]
+size_tab[, `:=`(prop = N / sum(N), per_ha = N / area_ha), by = set]
+setorder(size_tab, set, size_class)
+fwrite(size_tab, tab("size_classes"))
+
 # ---- 4. Figures (distributions from a seeded sample per set) ---------------
 smp <- dt[, .SD[sample(.N, min(.N, n_sample))], by = set]
 save_fig <- function(p, name, w = 8, h = 5) ggsave(file.path(fig_dir, name), p, width = w, height = h, dpi = 200)
@@ -126,6 +166,11 @@ save_fig(ggplot(smp[is.finite(DBH) & DBH > 0], aes(DBH, colour = set)) + geom_de
            scale_x_log10() + labs(x = "DBH (cm, log scale)", y = "Density", colour = NULL,
            title = paste(site, "DBH distribution"), caption = paste("Up to", n_sample, "crowns per set")) + th,
          "dbh_density.png")
+save_fig(ggplot(size_tab, aes(size_class, if (is.na(area_ha)) N else per_ha, fill = set)) +
+           geom_col(position = position_dodge(preserve = "single")) + scale_y_log10() +
+           labs(x = "DBH size class (cm)", y = if (is.na(area_ha)) "Crowns (log scale)" else "Crowns per ha (log scale)",
+                fill = NULL, title = paste(site, "crowns by DBH size class")) + th,
+         "size_class_distribution.png", 9, 5)
 save_fig(ggplot(smp[Area > 0], aes(Area, colour = set)) + geom_density() + scale_x_log10() +
            labs(x = "Crown area (m², log scale)", y = "Density", colour = NULL,
                 title = paste(site, "crown area distribution")) + th, "crown_area_density.png")
@@ -192,15 +237,23 @@ for (i in seq_len(nrow(summary_tab))) {
 }
 if (exists("ref_stats")) {
   md <- c(md, "", paste0("## Crown counts vs ", ref, " (NEON CHM heights)"), "",
-          "| Product | Median % difference per tile | Cell R² | Cell RMSE | Cell bias |", "|---|---|---|---|---|",
-          sprintf("| %s | %.1f | %.3f | %.1f | %.1f |", ref_stats$product, ref_stats$median_pct_diff_per_tile,
-                  ref_stats$r2, ref_stats$rmse, ref_stats$bias))
+          "| Product | Median % difference per tile | Paired Wilcoxon p | Cell R² | Cell RMSE | Cell bias |",
+          "|---|---|---|---|---|---|",
+          sprintf("| %s | %.1f | %.2g | %.3f | %.1f | %.1f |", ref_stats$product, ref_stats$median_pct_diff_per_tile,
+                  ref_stats$wilcoxon_p, ref_stats$r2, ref_stats$rmse, ref_stats$bias))
 }
 if (!is.null(hc)) {
   md <- c(md, "", "## Morford vs NEON CHM height on identical crowns", "",
           "| Product | Pairs | R² | Bias (m) | RMSE (m) | DBH bias (cm) |", "|---|---|---|---|---|---|",
           sprintf("| %s | %s | %.3f | %.2f | %.2f | %.2f |", hc$product, format(hc$n_pairs, big.mark = ","),
                   hc$r2, hc$bias_m, hc$rmse_m, hc$dbh_bias_cm))
+}
+if (!is.null(dist_tab) && nrow(dist_tab)) {
+  md <- c(md, "", paste0("## Distributions vs ", ref, " (NEON CHM)"), "",
+          "KS D and Wasserstein-1 are effect sizes; with this many crowns p-values are not informative.", "",
+          "| Set | Variable | Median | Median (ref) | Ratio | KS D | Wasserstein-1 |", "|---|---|---|---|---|---|---|",
+          sprintf("| %s | %s | %.2f | %.2f | %.2f | %.3f | %.2f |", dist_tab$set, dist_tab$variable, dist_tab$median,
+                  dist_tab$median_ref, dist_tab$median_ratio, dist_tab$ks_D, dist_tab$wasserstein1))
 }
 md <- c(md, "", paste0("Figures: `reports/figures/crowns_", site, "/`. Tables: `reports/tables/crowns_", site, "_*.csv`."))
 md_file <- file.path(cfg$repo_root, cfg$reports_dir, paste0("crowns_", site, "_report.md"))

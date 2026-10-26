@@ -27,6 +27,9 @@ size_abundance:
   prior_sd:   0.3
   chunk_size: 50
   seed: 42
+  max_rhat: 1.05          # cells above this (alpha or N_tot) are excluded from validation stats
+  alpha_variable: null    # posterior_summary 'variable' to use; null = the only one present
+  ntot_variable:  null
 
 products:
   NEON10:

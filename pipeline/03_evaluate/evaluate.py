@@ -12,9 +12,10 @@ Usage:
 Outputs (inside repo):
     reports/tables/eval_{product}_{model}_detections.csv   one row per ground-truth crown
     reports/tables/eval_{product}_{model}_summary.csv      overall recall/precision + settings
+    reports/tables/eval_{product}_{model}_predictions.csv  every prediction with its score
     reports/figures/eval_{product}_{model}/*.png           overlays (white = annotation,
                                                            salmon dashed = prediction)
-Per-forest-type tables and mAP are added in Phase 2.
+Per-block and per-forest-type tables, mean IoU, and mAP: eval_tables.py.
 """
 
 import argparse
@@ -54,6 +55,10 @@ iou = cfg["detection"]["iou_threshold"]
 
 # ---- Predict on test crops and score ---------------------------------------
 predictions = model.predict_file(csv_file=csv_file, root_dir=crop_dir)
+# All predictions with scores (needed for mAP and per-block tables in eval_tables.py)
+pred_cols = [c for c in ["image_path", "xmin", "ymin", "xmax", "ymax", "score", "label"] if c in predictions]
+predictions[pred_cols].to_csv(
+    cs.repo_path(cfg, "reports_dir", "tables", f"eval_{tag}_predictions.csv"), index=False)
 ground_truth = pd.read_csv(csv_file)
 ground_truth["geometry"] = [box(r.xmin, r.ymin, r.xmax, r.ymax) for r in ground_truth.itertuples()]
 ground_truth = geopandas.GeoDataFrame(ground_truth, geometry="geometry")

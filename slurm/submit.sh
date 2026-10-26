@@ -13,6 +13,8 @@
 #   bash slurm/submit.sh summarize   HARV            (assess crowns before alpha)
 #   bash slurm/submit.sh lai         HARV
 #   bash slurm/submit.sh alpha       NAIP30 HARV [neon_chm|morford]
+#   CS_ARRAY=3,7 bash slurm/submit.sh alpha NAIP30 HARV   (rerun only those chunks)
+#   bash slurm/submit.sh alphareport HARV            (combine chunks, rasters, validation)
 #
 # Array sizes are counted from the data at submit time (tiles, crown files,
 # grid-cell chunks), never hardcoded. Prints the job id on success.
@@ -53,6 +55,7 @@ case "$stage" in
     source slurm/env_R.sh
     n=$(Rscript pipeline/06_size_abundance/recover_alpha.R --product "$1" --site "$2" --height "${3:-neon_chm}" --count-chunks | tr -d ' ')
     echo "Submitting $n chunk tasks" >&2
-    sb --array=1-"$n" --export=ALL,PRODUCT=$1,SITE=$2,HEIGHT=${3:-neon_chm} slurm/06_recover_alpha.sbatch ;;
+    sb --array="${CS_ARRAY:-1-$n}" --export=ALL,PRODUCT=$1,SITE=$2,HEIGHT=${3:-neon_chm} slurm/06_recover_alpha.sbatch ;;
+  alphareport) sb --export=ALL,SITE=$1 slurm/06_summarize_alpha.sbatch ;;
   *) echo "Unknown stage: $stage" >&2; exit 1 ;;
 esac
